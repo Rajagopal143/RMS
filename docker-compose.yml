@@ -1,0 +1,51 @@
+name: rms
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    image: rms/backend:latest
+    container_name: rms-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    networks: [rms]
+
+  admin:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        APP_NAME: admin
+    image: rms/admin:latest
+    container_name: rms-admin
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${ADMIN_PORT:-8080}:8080"
+    networks: [rms]
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        APP_NAME: worker
+    image: rms/worker:latest
+    container_name: rms-worker
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${WORKER_PORT:-8081}:8080"
+    networks: [rms]
+
+networks:
+  rms:
+    driver: bridge

@@ -1,0 +1,81 @@
+# Development stack: source is bind-mounted and every app hot-reloads.
+#
+#   docker compose -f docker-compose.dev.yml up
+#
+# node_modules live in named volumes so Linux-built binaries never clobber the
+# host's install, and so the pnpm workspace symlinks stay valid inside the
+# container.
+name: rms-dev
+
+x-node: &node
+  image: node:22-alpine
+  working_dir: /app
+  environment:
+    NODE_ENV: development
+    PNPM_HOME: /pnpm
+    PATH: /pnpm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  volumes:
+    - .:/app
+    - pnpm-store:/pnpm
+    - node-modules-root:/app/node_modules
+    - node-modules-admin:/app/apps/admin/node_modules
+    - node-modules-worker:/app/apps/worker/node_modules
+    - node-modules-ui:/app/packages/ui/node_modules
+    - node-modules-eslint-config:/app/packages/eslint-config/node_modules
+    - node-modules-typescript-config:/app/packages/typescript-config/node_modules
+  networks: [rms]
+
+services:
+  # Installs the workspace once and exits; the app services wait for it.
+  deps:
+    <<: *node
+    container_name: rms-dev-deps
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile"
+
+  backend:
+    image: oven/bun:1.3-alpine
+    container_name: rms-dev-backend
+    working_dir: /app
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/backend:/app
+      - node-modules-backend:/app/node_modules
+    command: sh -c "bun install && bun --watch run index.ts"
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    networks: [rms]
+
+  admin:
+    <<: *node
+    container_name: rms-dev-admin
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+    command: sh -c "corepack enable && pnpm --filter admin exec vite --host 0.0.0.0 --port 5173"
+    ports:
+      - "${ADMIN_DEV_PORT:-5173}:5173"
+
+  worker:
+    <<: *node
+    container_name: rms-dev-worker
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+    command: sh -c "corepack enable && pnpm --filter worker exec vite --host 0.0.0.0 --port 5174"
+    ports:
+      - "${WORKER_DEV_PORT:-5174}:5174"
+
+volumes:
+  pnpm-store:
+  node-modules-root:
+  node-modules-admin:
+  node-modules-worker:
+  node-modules-ui:
+  node-modules-eslint-config:
+  node-modules-typescript-config:
+  node-modules-backend:
+
+networks:
+  rms:
+    driver: bridge
