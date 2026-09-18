@@ -24,6 +24,79 @@ directory, both of which use shared components from the `@workspace/ui` package.
 
 The goal of this repository is to provide up-to-date starters for vite-react and Next.js, and probably something else.
 
+## 🐳 Running with Docker
+
+Everything in the monorepo runs in containers — no local Node, pnpm or Bun required.
+
+### Services
+
+| Service   | Source          | Runtime                 | Prod port | Dev port |
+| --------- | --------------- | ----------------------- | --------- | -------- |
+| `backend` | `apps/backend`  | Bun + Express           | 3000      | 3000     |
+| `admin`   | `apps/admin`    | Vite build behind nginx | 8080      | 5173     |
+| `worker`  | `apps/worker`   | Vite build behind nginx | 8081      | 5174     |
+
+The frontends proxy `/api/*` to the `backend` service over the compose network, so
+the browser only ever talks to a single origin.
+
+### Production-style stack
+
+Builds each app and serves the static bundles from nginx:
+
+```bash
+docker compose up --build -d
+```
+
+- admin → http://localhost:8080
+- worker → http://localhost:8081
+- backend → http://localhost:3000
+
+```bash
+docker compose logs -f        # follow logs
+docker compose ps             # health status
+docker compose down           # stop and remove
+```
+
+### Development stack (hot reload)
+
+Bind-mounts the repo and runs the Vite dev servers plus `bun --watch`, so edits on
+the host reload instantly. `node_modules` live in named volumes, so container
+builds never clobber a host install.
+
+```bash
+docker compose -f docker-compose.dev.yml up
+```
+
+- admin → http://localhost:5173
+- worker → http://localhost:5174
+- backend → http://localhost:3000
+
+```bash
+docker compose -f docker-compose.dev.yml down -v   # stop and drop node_modules volumes
+```
+
+### Ports
+
+Copy `.env.example` to `.env` to change any host port:
+
+```bash
+cp .env.example .env
+```
+
+### Building a single image
+
+Both frontends share one parameterized Dockerfile; the build context is the repo
+root because the apps consume workspace packages:
+
+```bash
+docker build -f docker/frontend.Dockerfile --build-arg APP_NAME=admin -t rms/admin .
+docker build -f docker/backend.Dockerfile -t rms/backend .
+```
+
+Adding another Vite app to `apps/*` only needs a new service block in
+`docker-compose.yml` with its `APP_NAME`, plus its `package.json` in the
+dependency-cache layer of `docker/frontend.Dockerfile`.
+
 ### Prerequisites
 
 Make sure you have the following installed:

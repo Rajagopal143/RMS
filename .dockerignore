@@ -1,0 +1,35 @@
+# Version control / tooling
+.git
+.github
+.gitignore
+.claude
+.idea
+.vscode
+
+# Dependencies and build caches
+node_modules
+**/node_modules
+.turbo
+**/.turbo
+.pnpm-store
+**/*.tsbuildinfo
+
+# Build outputs
+dist
+**/dist
+build
+**/build
+.next
+**/.next
+out
+**/out
+
+# Local env and misc
+.env
+.env.*
+*.log
+npm-debug.log*
+coverage
+**/coverage
+.DS_Store
+docker-compose*.yml
