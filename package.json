@@ -8,7 +8,8 @@
     "lint": "turbo lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "volta:install": "curl https://get.volta.sh | bash",
-    "ui": "pnpm --filter @workspace/ui ui"
+    "ui": "pnpm --filter @workspace/ui ui",
+    "desktop": "pnpm --filter admin desktop"
   },
   "devDependencies": {
     "@workspace/eslint-config": "workspace:*",
@@ -20,5 +21,12 @@
   "packageManager": "pnpm@10.4.1",
   "engines": {
     "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "@swc/core"
+    ]
   }
 }

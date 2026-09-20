@@ -7,12 +7,21 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "desktop": "electron .",
+    "desktop:dev": "concurrently -k -n vite,electron \"vite\" \"wait-on tcp:5173 && electron .\""
   },
   "dependencies": {
     "@workspace/ui": "workspace:*",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "@workspace/shared": "workspace:*",
+    "react-router": "^7.9.4",
+    "lucide-react": "^0.563.0",
+    "sonner": "^2.0.7",
+    "@fontsource-variable/bricolage-grotesque": "^5.2.10",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@fontsource-variable/figtree": "^5.2.10"
   },
   "devDependencies": {
     "@types/node": "^25.2.2",
@@ -22,6 +31,10 @@
     "@workspace/eslint-config": "workspace:*",
     "eslint": "^10.0.0",
     "typescript": "~5.9.3",
-    "vite": "^7.3.1"
-  }
+    "vite": "^7.3.1",
+    "electron": "^38.2.0",
+    "concurrently": "^9.2.1",
+    "wait-on": "^8.0.5"
+  },
+  "main": "electron/main.cjs"
 }

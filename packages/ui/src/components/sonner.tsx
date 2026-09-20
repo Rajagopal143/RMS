@@ -38,3 +38,6 @@ const Toaster = ({ ...props }: ToasterProps) => {
 }
 
 export { Toaster }
+
+// Re-exported so apps can raise toasts without depending on sonner directly.
+export { toast } from "sonner"

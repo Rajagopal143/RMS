@@ -4,6 +4,8 @@ import path from "node:path";
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Relative asset paths so the built app loads from file:// inside Electron.
+  base: "./",
   plugins: [react()],
   resolve: {
     alias: {
@@ -13,4 +15,5 @@ export default defineConfig({
   css: {
     postcss: path.resolve(__dirname, "./postcss.config.mjs"),
   },
+  server: { port: 5173, strictPort: true },
 });

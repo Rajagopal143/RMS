@@ -1,0 +1,80 @@
+# Dev setup: source is bind-mounted, services run in watch mode.
+x-dev: &dev
+  image: rms-dev
+  build: { context: ., dockerfile: Dockerfile.dev }
+  working_dir: /repo
+  volumes:
+    - .:/repo
+    # Keep the container's Linux node_modules instead of the host's
+    - /repo/node_modules
+    - /repo/apps/admin/node_modules
+    - /repo/apps/backend/node_modules
+    - /repo/apps/worker/node_modules
+    - /repo/apps/ws/node_modules
+    - /repo/packages/db/node_modules
+    - /repo/packages/shared/node_modules
+    - /repo/packages/ui/node_modules
+    - /repo/packages/eslint-config/node_modules
+    - /repo/packages/typescript-config/node_modules
+  environment: &dev-env
+    DATABASE_URL: postgres://rms:rms@postgres:5432/rms
+    JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+    TZ: ${TZ:-Asia/Kolkata}
+    CHOKIDAR_USEPOLLING: "true"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: rms
+      POSTGRES_PASSWORD: rms
+      POSTGRES_DB: rms
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rms -d rms"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *dev
+    command: sh -c "pnpm --filter @workspace/db db:migrate && pnpm --filter @workspace/db db:seed"
+    environment:
+      <<: *dev-env
+      SEED_DEMO: ${SEED_DEMO:-true}
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-admin@rms.local}
+      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:-admin123}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  backend:
+    <<: *dev
+    command: pnpm --filter backend dev
+    environment: { <<: *dev-env, PORT: 3001 }
+    ports: ["3001:3001"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  ws:
+    <<: *dev
+    command: pnpm --filter ws-app dev
+    environment: { <<: *dev-env, PORT: 3002 }
+    ports: ["3002:3002"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  admin:
+    <<: *dev
+    command: pnpm --filter admin dev --host 0.0.0.0 --port 5173
+    ports: ["5173:5173"]
+
+  worker:
+    <<: *dev
+    command: pnpm --filter worker dev --host 0.0.0.0 --port 5174
+    ports: ["5174:5174"]
+
+volumes:
+  pgdata:
