@@ -1,0 +1,127 @@
+/*
+ * RMS theme, layered on top of the shadcn tokens in @workspace/ui.
+ * Steel-and-ticket palette: cool pass-counter greys, ink text, turmeric accent,
+ * and thermal-paper tickets set in a monospace face.
+ */
+
+@theme {
+  --font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Figtree Variable", "Figtree", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  --color-steel: #e6e8e3;
+  --color-ink: #16191d;
+  --color-turmeric: #f2a900;
+  --color-turmeric-soft: #fff3cf;
+  --color-basil: #2f7d4e;
+  --color-basil-soft: #dff0e5;
+  --color-chili: #c8352b;
+  --color-ticket: #ffffff;
+}
+
+:root {
+  --radius: 0.5rem;
+  --background: #f3f4f1;
+  --foreground: #16191d;
+  --card: #ffffff;
+  --card-foreground: #16191d;
+  --popover: #ffffff;
+  --popover-foreground: #16191d;
+  --primary: #16191d;
+  --primary-foreground: #ffffff;
+  --secondary: #e6e8e3;
+  --secondary-foreground: #16191d;
+  --muted: #e9ebe6;
+  --muted-foreground: #5d636b;
+  --accent: #fff3cf;
+  --accent-foreground: #16191d;
+  --destructive: #c8352b;
+  --border: #d9dcd5;
+  --input: #cfd3cb;
+  --ring: #f2a900;
+  --sidebar: #16191d;
+  --sidebar-foreground: #c9cdd2;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--background);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/* Numbers that must line up: prices, order numbers, timers. */
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- The ticket: the one signature element, used for KOTs, bills and packing slips ---- */
+.ticket {
+  position: relative;
+  background: var(--color-ticket);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  border-top: 6px solid var(--ticket-accent, var(--color-ink));
+  box-shadow:
+    0 1px 0 rgb(0 0 0 / 0.04),
+    0 10px 24px -14px rgb(22 25 29 / 0.45);
+  /* Torn thermal-paper bottom edge. */
+  --tear: 7px;
+  padding-bottom: calc(var(--tear) + 0.25rem);
+  mask:
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / calc(var(--tear) * 2) var(--tear) repeat-x,
+    linear-gradient(#000 0 0) top / 100% calc(100% - var(--tear)) no-repeat;
+}
+
+.ticket-rule {
+  border: 0;
+  border-top: 1px dashed rgb(22 25 29 / 0.35);
+}
+
+/* Hanging-rail clip at the top of each kitchen ticket. */
+.ticket-clip::before {
+  content: "";
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  width: 44px;
+  height: 10px;
+  transform: translateX(-50%);
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(#9aa0a6, #6b7178);
+}
+
+@keyframes ticket-drop {
+  from {
+    transform: translateY(-18px) rotate(-1.5deg);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.ticket-new {
+  animation: ticket-drop 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticket-new {
+    animation: none;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}

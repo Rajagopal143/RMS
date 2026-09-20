@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1775794721206,
+      "tag": "0000_ambiguous_sinister_six",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789764117753,
+      "tag": "0001_restaurant_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789813654024,
+      "tag": "0002_expenses",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789814577011,
+      "tag": "0003_categories_routing",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789814610262,
+      "tag": "0004_drop_stations",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789816564201,
+      "tag": "0005_waiters_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789822633887,
+      "tag": "0006_remove_tax",
+      "breakpoints": true
+    }
+  ]
+}

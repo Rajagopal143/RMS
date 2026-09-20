@@ -1,12 +1,34 @@
 {
-  "name": "db",
-  "module": "index.ts",
-  "type": "module",
+  "name": "@workspace/db",
+  "version": "0.0.0",
   "private": true,
-  "devDependencies": {
-    "@types/bun": "latest"
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "check-types": "tsc --noEmit",
+    "db:seed": "tsx src/seed.ts"
   },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "drizzle-orm": "^0.41.0",
+    "postgres": "^3.4.7",
+    "bcryptjs": "^3.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@workspace/typescript-config": "workspace:*",
+    "dotenv-cli": "^11.0.0",
+    "drizzle-kit": "^0.31.4",
+    "typescript": "5.9.3",
+    "tsx": "^4.20.3"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "main": "./src/index.ts"
 }
