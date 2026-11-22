@@ -1,4 +1,4 @@
-/** Alerts: a short chime, an in-app toast, and a system notification when the screen isn't in view. */
+/** Alerts: a chime, a vibration, an in-app toast, and a system notification when the screen isn't in view. */
 import { toast } from "@workspace/ui/components/sonner";
 
 let audio: AudioContext | null = null;
@@ -23,8 +23,21 @@ export function notificationBlocker(): string | null {
   return null;
 }
 
+/** Two firm pulses: new work for a cook, food ready for a waiter. Phones only; iPhones don't support it. */
+const BUZZ = [220, 110, 220];
+
+/** Android Chrome only vibrates after the person has tapped the page at least once. */
+export function vibrate(pattern: number | number[] = BUZZ) {
+  try {
+    if ("vibrate" in navigator) navigator.vibrate(pattern);
+  } catch {
+    // not allowed here (no tap yet, or the browser blocks it): the chime and toast still fire
+  }
+}
+
 /** Browsers only allow sound after a tap, so call this from a click handler. */
 export async function enableAlerts(): Promise<boolean> {
+  vibrate(120); // a short buzz so they can feel that it works
   try {
     audio ??= new AudioContext();
     await audio.resume();
@@ -56,13 +69,14 @@ export function chime() {
   });
 }
 
-/** Chime + toast always; a system notification too when the page is in the background. */
+/** Chime, buzz and toast always; a system notification too when the page is in the background. */
 export function alertUser(title: string, body: string) {
   chime();
+  vibrate();
   toast(title, { description: body });
   if (document.visibilityState === "visible") return;
   if (!("Notification" in window) || Notification.permission !== "granted") return;
-  const options = { body, tag: title, renotify: true, vibrate: [120, 60, 120] } as NotificationOptions;
+  const options = { body, tag: title, renotify: true, vibrate: BUZZ, icon: "/icon-192.png", badge: "/favicon.png" } as NotificationOptions;
   if (worker) {
     void worker.showNotification(title, options);
     return;

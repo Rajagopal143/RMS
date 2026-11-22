@@ -1,0 +1,39 @@
+# Serves both web apps and forwards /api and /ws to the services.
+# The two addresses come from the environment:
+#   no domain yet:  ADMIN_ADDR=:80        WORKER_ADDR=:8080     (plain http, on the server's IP)
+#   with a domain:  ADMIN_ADDR=example.com WORKER_ADDR=worker.example.com  (https, certificates are automatic)
+
+(site) {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy backend:3001
+	}
+	handle /ws {
+		reverse_proxy ws:3002
+	}
+	handle /health {
+		reverse_proxy backend:3001
+	}
+
+	handle {
+		root * {args[0]}
+		try_files {path} /index.html
+
+		# Built files carry a hash in their name, so they can be kept for a year.
+		header /assets/* Cache-Control "public, max-age=31536000, immutable"
+		# These must always be re-checked, so an update reaches phones quickly.
+		header /index.html Cache-Control "no-cache"
+		header /sw.js Cache-Control "no-cache"
+		header /manifest.webmanifest Cache-Control "no-cache"
+		file_server
+	}
+}
+
+{$ADMIN_ADDR::80} {
+	import site /srv/admin
+}
+
+{$WORKER_ADDR::8080} {
+	import site /srv/worker
+}

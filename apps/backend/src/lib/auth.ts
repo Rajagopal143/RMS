@@ -22,6 +22,10 @@ declare global {
   }
 }
 
+// Anyone who knows the secret can sign in as anyone, so a real server must set its own.
+if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET is not set. Set a long random value before running in production.");
+}
 export const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-me";
 if (!process.env.JWT_SECRET) console.warn("JWT_SECRET not set; using the insecure dev default");
 

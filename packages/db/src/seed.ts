@@ -20,6 +20,10 @@ import {
 const hash = (p: string) => bcrypt.hash(p, 10);
 
 async function seedPlatform() {
+  // The built-in admin123 password is for local development only.
+  if (process.env.NODE_ENV === "production" && !process.env.SUPERADMIN_PASSWORD) {
+    throw new Error("SUPERADMIN_PASSWORD is not set. Set the platform admin's password before running in production.");
+  }
   const email = process.env.SUPERADMIN_EMAIL ?? "admin@rms.local";
   const password = process.env.SUPERADMIN_PASSWORD ?? "admin123";
   const existing = await db.select().from(users).where(eq(users.email, email));

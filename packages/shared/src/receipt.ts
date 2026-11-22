@@ -59,9 +59,6 @@ export function buildBill(order: Order, header: BillHeader): PrintDocument {
   if (header.phone) lines.push({ kind: "text", text: `Ph: ${header.phone}`, align: "center" });
   if (header.gstin) lines.push({ kind: "text", text: `GSTIN: ${header.gstin}`, align: "center" });
   lines.push({ kind: "divider" }, ...orderHeader(order));
-  if (order.type === "delivery" && order.customerAddress) {
-    lines.push({ kind: "text", text: `Deliver to: ${order.customerAddress}` });
-  }
   if (order.customerPhone) lines.push({ kind: "text", text: `Phone: ${order.customerPhone}` });
   lines.push({ kind: "divider" });
   for (const item of order.items) {
@@ -78,7 +75,11 @@ export function buildBill(order: Order, header: BillHeader): PrintDocument {
     { kind: "row", left: "TOTAL", right: money(order.total), bold: true },
     { kind: "divider" },
   );
-  if (order.paymentMode) lines.push({ kind: "text", text: `Paid by ${order.paymentMode.toUpperCase()}` });
+  if (order.paymentMode === "split") {
+    lines.push({ kind: "row", left: "Paid by cash", right: money(order.paidCash) }, { kind: "row", left: "Paid by UPI", right: money(order.paidUpi) });
+  } else if (order.paymentMode) {
+    lines.push({ kind: "text", text: `Paid by ${order.paymentMode.toUpperCase()}` });
+  }
   lines.push({ kind: "text", text: "Thank you! Visit again.", align: "center" }, { kind: "feed", lines: 3 });
   return { title: `Bill #${order.orderNo}`, lines };
 }

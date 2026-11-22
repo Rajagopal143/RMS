@@ -50,6 +50,13 @@
       "when": 1789822633887,
       "tag": "0006_remove_tax",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791486809029,
+      "tag": "0007_split_payment",
+      "breakpoints": true
     }
   ]
 }

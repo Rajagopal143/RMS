@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, MapPin, Phone } from "lucide-react";
+import { Check, Phone } from "lucide-react";
 import { cn } from "@workspace/ui/lib/utils";
 import { api, ORDER_TYPE_LABEL, subscribeRealtime, type Order } from "@workspace/shared";
 import { alertUser } from "./alerts";
@@ -85,7 +85,7 @@ export function PackingScreen({ ws, switcher }: { ws: Workspace; switcher?: Reac
               const allChecked = o.items.every((i) => checked.has(i.id));
               const waited = Math.max(0, Math.floor((now - new Date(o.createdAt).getTime()) / 60000));
               return (
-                <article key={o.id} className="ticket ticket-new px-4 pt-3" style={{ ["--ticket-accent" as string]: o.type === "delivery" ? "var(--color-chili)" : "var(--color-basil)" }}>
+                <article key={o.id} className="ticket ticket-new px-4 pt-3" style={{ ["--ticket-accent" as string]: "var(--color-basil)" }}>
                   <div className="flex items-baseline justify-between">
                     <span className="text-3xl font-bold">#{o.orderNo}</span>
                     <span className="text-sm text-muted-foreground">{waited} min</span>
@@ -95,11 +95,6 @@ export function PackingScreen({ ws, switcher }: { ws: Workspace; switcher?: Reac
                     {o.tableNo && ` · Table ${o.tableNo}`}
                   </p>
                   {o.customerName && <p className="text-sm">{o.customerName}</p>}
-                  {o.type === "delivery" && o.customerAddress && (
-                    <p className="mt-1 flex gap-1.5 text-sm">
-                      <MapPin className="mt-0.5 size-3.5 shrink-0" /> {o.customerAddress}
-                    </p>
-                  )}
                   {o.customerPhone && (
                     <p className="flex items-center gap-1.5 text-sm">
                       <Phone className="size-3.5" /> {o.customerPhone}

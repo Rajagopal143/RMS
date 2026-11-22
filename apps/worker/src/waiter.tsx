@@ -209,7 +209,7 @@ function TableDetail({ table, onBack, onAdd, onChanged }: { table: TableStatus; 
         </Section>
       )}
 
-      <div className="fixed inset-x-0 bottom-0 border-t bg-card/95 p-3 backdrop-blur">
+      <div className="fixed inset-x-0 bottom-0 border-t bg-card/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
         <button onClick={onAdd} className="mx-auto flex h-12 w-full max-w-xl items-center justify-center gap-2 rounded-lg bg-ink text-base font-semibold text-white">
           <Plus className="size-5" /> Add items
         </button>
@@ -313,7 +313,7 @@ function AddItems({
 
   return (
     <div className="mx-auto max-w-xl pb-28">
-      <div className="sticky top-[57px] z-[5] border-b bg-card px-4 pb-3 pt-3">
+      <div className="sticky top-[calc(45px+max(0.75rem,env(safe-area-inset-top)))] z-[5] border-b bg-card px-4 pb-3 pt-3">
         <div className="flex items-center gap-3">
           <button onClick={onBack} className="-ml-1 rounded-md p-1.5 hover:bg-muted" aria-label="Back to table">
             <ArrowLeft className="size-5" />
@@ -392,7 +392,7 @@ function AddItems({
         {visible.length === 0 && <li className="px-4 py-12 text-center text-muted-foreground">No foods match.</li>}
       </ul>
 
-      <div className="fixed inset-x-0 bottom-0 border-t bg-card/95 p-3 backdrop-blur">
+      <div className="fixed inset-x-0 bottom-0 border-t bg-card/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
         <button
           onClick={send}
           disabled={busy || count === 0}

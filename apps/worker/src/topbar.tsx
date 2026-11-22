@@ -31,7 +31,7 @@ export function Topbar({
   const [sound, setSound] = useState(false);
 
   return (
-    <header className="sticky top-0 z-10 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-white/10 bg-ink/95 px-4 py-3 text-white backdrop-blur sm:px-5">
+    <header className="sticky top-0 z-10 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-white/10 bg-ink/95 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-white backdrop-blur sm:px-5">
       <div className="flex items-baseline gap-3">
         <span className="size-3 self-center rounded-full" style={{ background: color }} />
         <h1 className="text-2xl font-semibold">{title}</h1>

@@ -57,6 +57,21 @@ Other devices on the same Wi-Fi use your computer's address instead of `localhos
 example `http://192.168.1.20:5174` on a waiter's phone. Find it with
 `ipconfig getifaddr en0` on macOS.
 
+### Installing the apps on a phone or tablet
+
+Both web apps install like an app: `apps/worker` as **RMS Worker** (waiters, cooks, packing) and
+`apps/admin` as **RMS Admin** (billing, tables, reports). Open one in the browser, then:
+
+- **iPhone (Safari):** Share → **Add to Home Screen**.
+- **Android (Chrome):** menu → **Add to Home screen** (or **Install app** when offered).
+
+It then opens full screen with its own icon. Alerts chime and, on Android, **vibrate**; tap
+**Turn on alerts** once after opening it (browsers only allow sound and vibration after a tap).
+
+Over plain `http://` on your Wi-Fi, Chrome treats the page as insecure, so it won't offer a full
+install, pop-up notifications or offline mode, and the add-to-home-screen result is a shortcut.
+Serve the app over **HTTPS** for those. iPhones don't support vibration at all.
+
 ### The desktop app (for printing)
 
 Printers are reached from the Electron app, which runs on the computer at the counter, not in
@@ -85,6 +100,51 @@ Seeded when `SEED_DEMO=true` (the default in `docker-compose.yml`):
 
 **Change these before using the app for real**, and set `JWT_SECRET` and a real Postgres
 password. Set `SEED_DEMO=false` to start with an empty restaurant list.
+
+## Deploying to a server
+
+Works on any Ubuntu server (AWS Lightsail, EC2, any VPS) with a public IP. It runs the same
+code in Docker with real secrets, the apps built for production, and Caddy in front.
+
+**1. Make the server.** Ubuntu 22.04 or 24.04, at least 2 GB of memory (1 GB can run out while
+installing). In the provider's firewall, open **22** (SSH), **80**, **8080** and **443**.
+
+**2. Deploy.** SSH in and run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Rajagopal143/RMS/main/deploy/deploy.sh -o deploy.sh
+bash deploy.sh --admin-email you@example.com
+```
+
+It installs Docker, gets the code, creates secrets, builds and starts everything (the first
+build takes several minutes) and schedules a nightly database backup. At the end it prints the
+two addresses and, once, the platform admin login. Until you have a domain the apps are on plain
+`http` at the server's IP: `http://IP` for admin and billing, `http://IP:8080` for waiters,
+kitchen and packing. That is fine for trying it out, but passwords travel unencrypted.
+
+**3. Add HTTPS when your domain is ready.** At your domain provider, add two **A records** to the
+server's IP: `example.com` and `worker.example.com` (use your own name). Then:
+
+```bash
+bash /opt/rms/deploy/deploy.sh --domain example.com
+```
+
+It checks both names point at the server, then Caddy gets certificates by itself. Waiters
+use `https://worker.example.com`. HTTPS is also what lets phones fully install the apps and show
+pop-up notifications. Close port 8080 afterwards.
+
+**Updating** is the same command again: `bash /opt/rms/deploy/deploy.sh` pulls the latest code,
+applies any database migrations and restarts what changed.
+
+Good to know:
+
+- Secrets live in `/opt/rms/.env` on the server (owner-only). The database is not reachable
+  from outside; only SSH and the web ports are.
+- Backups go to `/opt/rms/backups` every night and the last two weeks are kept. Also turn on your
+  provider's server snapshots, so a lost server doesn't mean lost data. `deploy/backup.sh` explains
+  how to restore.
+- The desktop app (for printing) points at the server: on its sign-in screen, set **Server** to
+  the full address, for example `https://example.com`.
 
 ## Setting up a real restaurant
 

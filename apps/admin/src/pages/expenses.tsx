@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pencil, Plus, Tags, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, Tags, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
@@ -13,6 +13,7 @@ import {
   TAG_COLORS,
   type Expense,
   type ExpensePaymentMode,
+  type Paged,
   type ExpenseSummary,
   type ExpenseTag,
 } from "@workspace/shared";
@@ -21,6 +22,7 @@ import { todayIso, toPaise, toRupees, useApi } from "../lib/hooks";
 import { EmptyState, ErrorNote, FormField, PageHeader } from "../components/bits";
 
 const UNTAGGED = "#9aa0a6";
+const PAGE_SIZE = 15;
 
 function iso(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -74,8 +76,13 @@ export function ExpensesPage() {
   const [busy, setBusy] = useState(false);
 
   const qs = `from=${range.from}&to=${range.to}`;
+  const filterKey = `${qs}|${tagFilter ?? ""}`;
+  const [pageState, setPageState] = useState({ key: filterKey, page: 1 });
+  const page = pageState.key === filterKey ? pageState.page : 1;
+  const goToPage = (p: number) => setPageState({ key: filterKey, page: p });
+
   const tags = useApi<ExpenseTag[]>("/expense-tags");
-  const list = useApi<Expense[]>(`/expenses?${qs}${tagFilter ? `&tagId=${tagFilter}` : ""}`);
+  const list = useApi<Paged<Expense>>(`/expenses?${qs}${tagFilter ? `&tagId=${tagFilter}` : ""}&page=${page}&pageSize=${PAGE_SIZE}`);
   const summary = useApi<ExpenseSummary>(isManager ? `/expenses/summary?${qs}` : null);
 
   const tagOf = (id: number | null) => tags.data?.find((t) => t.id === id);
@@ -97,6 +104,7 @@ export function ExpensesPage() {
       else await api("/expenses", { method: "POST", body });
       toast.success(draft.id ? "Expense saved" : `Added ${formatMoney(body.amount)} expense`);
       setDraft(null);
+      if (!draft.id) goToPage(1);
       await refresh();
     } catch (e) {
       toast.error((e as Error).message);
@@ -178,7 +186,7 @@ export function ExpensesPage() {
         )}
       </div>
       {list.error && <ErrorNote>{list.error}</ErrorNote>}
-      {list.data && list.data.length === 0 ? (
+      {list.data && list.data.total === 0 ? (
         <EmptyState title="No expenses in this period" action={<Button onClick={() => setDraft(newDraft())}>Add expense</Button>}>
           Record purchases and bills as they happen so your net profit stays accurate.
         </EmptyState>
@@ -197,7 +205,7 @@ export function ExpensesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(list.data ?? []).map((e) => {
+              {(list.data?.items ?? []).map((e) => {
                 const tag = tagOf(e.tagId);
                 return (
                   <TableRow key={e.id}>
@@ -238,6 +246,7 @@ export function ExpensesPage() {
               })}
             </TableBody>
           </Table>
+          {list.data && list.data.pages > 1 && <Pager data={list.data} onPage={goToPage} />}
         </div>
       )}
 
@@ -504,5 +513,56 @@ function TagManager({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Page numbers to show: first, last, and a few around the current page, with gaps as "…". */
+function pageWindow(current: number, pages: number): (number | "gap")[] {
+  const wanted = new Set([1, pages, current - 1, current, current + 1].filter((p) => p >= 1 && p <= pages));
+  const sorted = [...wanted].sort((a, b) => a - b);
+  const out: (number | "gap")[] = [];
+  sorted.forEach((p, i) => {
+    if (i > 0 && p - sorted[i - 1]! > 1) out.push("gap");
+    out.push(p);
+  });
+  return out;
+}
+
+function Pager({ data, onPage }: { data: Paged<Expense>; onPage: (page: number) => void }) {
+  const first = (data.page - 1) * data.pageSize + 1;
+  const last = Math.min(data.page * data.pageSize, data.total);
+  return (
+    <nav aria-label="Expense pages" className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+      <p className="tabular text-sm text-muted-foreground">
+        Showing {first}–{last} of {data.total}
+      </p>
+      <div className="flex items-center gap-1">
+        <Button size="sm" variant="outline" disabled={data.page <= 1} onClick={() => onPage(data.page - 1)}>
+          <ChevronLeft /> Previous
+        </Button>
+        {pageWindow(data.page, data.pages).map((p, i) =>
+          p === "gap" ? (
+            <span key={`gap-${i}`} className="px-1 text-muted-foreground" aria-hidden>
+              …
+            </span>
+          ) : (
+            <Button
+              key={p}
+              size="sm"
+              variant={p === data.page ? "default" : "outline"}
+              className="tabular min-w-8 px-2"
+              aria-current={p === data.page ? "page" : undefined}
+              aria-label={`Page ${p}`}
+              onClick={() => onPage(p)}
+            >
+              {p}
+            </Button>
+          ),
+        )}
+        <Button size="sm" variant="outline" disabled={data.page >= data.pages} onClick={() => onPage(data.page + 1)}>
+          Next <ChevronRight />
+        </Button>
+      </div>
+    </nav>
   );
 }

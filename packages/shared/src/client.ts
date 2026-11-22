@@ -32,8 +32,39 @@ export function setServerHost(host: string) {
   safeSet(SERVER_KEY, host.trim() || null);
 }
 
-export const apiBase = () => `http://${getServerHost()}:3001/api`;
-export const wsUrl = () => `ws://${getServerHost()}:3002`;
+/** Built bundles (served by the production web server) have PROD set; the dev servers don't. */
+const IS_PRODUCTION_BUILD = Boolean((import.meta as unknown as { env?: { PROD?: boolean } }).env?.PROD);
+
+/** A bare address on a local network: localhost, an IP, or a .local name. */
+function isLocalNetwork(host: string) {
+  return host === "localhost" || host.endsWith(".local") || host.includes(":") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+}
+
+/**
+ * Where the API and live updates are. In order:
+ * 1. A full address typed as the server (http://1.2.3.4 or https://app.example.com): used as is.
+ * 2. This page's own address, when it's a production build served by the web server, which
+ *    forwards /api and /ws to the services. This is how a deployed server works, on a domain or an IP.
+ * 3. A local-network address (the dev setup): the services on their own ports, 3001 and 3002.
+ * 4. Any other name is treated as a domain served over https.
+ */
+function endpoints(): { api: string; ws: string } {
+  const host = getServerHost();
+  const typed = host.match(/^(https?):\/\/([^/]+)/i);
+  if (typed) {
+    const secure = typed[1]!.toLowerCase() === "https";
+    return { api: `${typed[1]}://${typed[2]}/api`, ws: `${secure ? "wss" : "ws"}://${typed[2]}/ws` };
+  }
+  const here = typeof location !== "undefined" && /^https?:$/.test(location.protocol) ? location : null;
+  if (IS_PRODUCTION_BUILD && here && host === here.hostname) {
+    return { api: `${here.origin}/api`, ws: `${here.protocol === "https:" ? "wss" : "ws"}://${here.host}/ws` };
+  }
+  if (isLocalNetwork(host)) return { api: `http://${host}:3001/api`, ws: `ws://${host}:3002` };
+  return { api: `https://${host}/api`, ws: `wss://${host}/ws` };
+}
+
+export const apiBase = () => endpoints().api;
+export const wsUrl = () => endpoints().ws;
 
 let token: string | null = safeGet(TOKEN_KEY);
 

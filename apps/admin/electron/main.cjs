@@ -7,6 +7,9 @@ const fs = require("node:fs");
 const DEV_URL = process.env.ELECTRON_START_URL || "http://localhost:5173";
 let mainWindow = null;
 
+// The same "RMS." icon as the web app; the built copy lives in dist/ once packaged.
+const ICON = path.join(__dirname, app.isPackaged ? "../dist/icon-512.png" : "../public/icon-512.png");
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -14,6 +17,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 720,
     title: "RMS Admin",
+    icon: ICON,
     backgroundColor: "#F3F4F1",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -107,6 +111,8 @@ ipcMain.handle("printers:print", async (_event, job) => {
 });
 
 app.whenReady().then(() => {
+  // macOS takes the dock icon from the app bundle, so set it while running unpackaged.
+  if (process.platform === "darwin" && app.dock) app.dock.setIcon(ICON);
   createWindow();
   app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow());
 });

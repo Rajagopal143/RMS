@@ -167,7 +167,7 @@ export function AppShell({ restaurant = false }: { restaurant?: boolean }) {
   return (
     <div className="flex min-h-svh flex-col lg:flex-row">
       {/* Phone and tablet: top bar with a menu button. */}
-      <header className="sticky top-0 z-30 flex items-center gap-3 bg-sidebar px-4 py-3 text-sidebar-foreground lg:hidden">
+      <header className="sticky top-0 z-30 flex items-center gap-3 bg-sidebar px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-sidebar-foreground lg:hidden">
         <button onClick={() => setDrawerOpen(true)} className="-ml-1 rounded-md p-1.5 text-white hover:bg-white/10" aria-label="Open menu">
           <Menu className="size-5" />
         </button>

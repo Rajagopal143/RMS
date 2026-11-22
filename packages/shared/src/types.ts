@@ -4,11 +4,11 @@ export type Role = (typeof ROLES)[number];
 export const STAFF_ROLES = ["manager", "cashier", "waiter", "cook", "packer"] as const;
 export type StaffRole = (typeof STAFF_ROLES)[number];
 
-export const ORDER_TYPES = ["dine_in", "takeaway", "delivery"] as const;
+export const ORDER_TYPES = ["dine_in", "takeaway"] as const;
 export type OrderType = (typeof ORDER_TYPES)[number];
 
 /**
- * placed/cooking: in the kitchen · packing: takeaway/delivery ready to pack ·
+ * placed/cooking: in the kitchen · packing: takeaway ready to pack ·
  * serving: dine-in food ready for the waiter · served: all food at the table, awaiting the bill.
  */
 export type OrderStatus = "placed" | "cooking" | "packing" | "serving" | "served" | "completed" | "cancelled";
@@ -151,7 +151,10 @@ export interface Order {
   tax: number;
   discount: number;
   total: number;
-  paymentMode: PaymentMode | null;
+  /** "split" means part cash, part UPI: see paidCash and paidUpi. */
+  paymentMode: PaymentMode | "split" | null;
+  paidCash: number;
+  paidUpi: number;
   createdAt: string;
   completedAt: string | null;
   items: OrderItem[];
@@ -176,7 +179,6 @@ export interface RealtimeEvent {
 export const ORDER_TYPE_LABEL: Record<OrderType, string> = {
   dine_in: "Dine-in",
   takeaway: "Takeaway",
-  delivery: "Delivery",
 };
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -219,6 +221,14 @@ export interface Expense {
   paymentMode: ExpensePaymentMode | null;
   addedBy?: string | null;
   createdAt: string;
+}
+
+export interface Paged<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pages: number;
 }
 
 export interface ExpenseSummary {

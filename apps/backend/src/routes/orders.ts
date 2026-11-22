@@ -50,7 +50,7 @@ function orderEvent(type: RealtimeEvent["type"], order: OrderRow, extra: Partial
 
 /**
  * Derives the order status from its items; returns the updated order if it changed.
- * Kitchen first (placed → cooking); then takeaway/delivery go to packing, and dine-in
+ * Kitchen first (placed → cooking); then takeaway goes to packing, and dine-in
  * goes to the waiter (serving) until every item is at the table (served).
  */
 async function syncOrderStatus(orderId: number): Promise<OrderRow | null> {
@@ -94,11 +94,10 @@ const lineInput = z.object({
 });
 
 const orderInput = z.object({
-  type: z.enum(["dine_in", "takeaway", "delivery"]),
+  type: z.enum(["dine_in", "takeaway"]),
   tableId: z.number().int().nullish(),
   customerName: z.string().trim().nullish(),
   customerPhone: z.string().trim().nullish(),
-  customerAddress: z.string().trim().nullish(),
   notes: z.string().trim().nullish(),
   discount: z.number().int().min(0).default(0),
   paymentMode: z.enum(["cash", "upi", "card"]).nullish(),
@@ -154,7 +153,6 @@ ordersRouter.post("/orders", requireRole("owner", "manager", "cashier", "waiter"
   const user = req.user!;
   const body = parse(orderInput, req.body);
   if (user.role === "waiter" && body.type !== "dine_in") throw new HttpError(403, "Waiters take table orders only");
-  if (body.type === "delivery" && !body.customerAddress) throw new HttpError(400, "Enter the delivery address");
 
   let table: typeof diningTables.$inferSelect | undefined;
   if (body.type === "dine_in") {
@@ -212,13 +210,14 @@ ordersRouter.post("/orders", requireRole("owner", "manager", "cashier", "waiter"
         tableNo: table?.name ?? null,
         customerName: body.customerName,
         customerPhone: body.customerPhone,
-        customerAddress: body.customerAddress,
         notes: body.notes,
         subtotal: priced.subtotal,
         discount,
         total: priced.subtotal - discount,
-        // Dine-in pays when the table settles; takeaway and delivery pay now.
+        // Dine-in pays when the table settles; takeaway pays now.
         paymentMode: table ? null : body.paymentMode,
+        paidCash: !table && body.paymentMode === "cash" ? priced.subtotal - discount : 0,
+        paidUpi: !table && body.paymentMode === "upi" ? priced.subtotal - discount : 0,
         createdBy: user.id,
       })
       .returning();
@@ -322,7 +321,12 @@ ordersRouter.post("/orders/:id/serve", requireRole("owner", "manager", "cashier"
 ordersRouter.post("/orders/:id/settle", requireRole("owner", "manager", "cashier"), async (req, res) => {
   const rid = restaurantId(req);
   const body = parse(
-    z.object({ paymentMode: z.enum(["cash", "upi", "card"]), discount: z.number().int().min(0).default(0) }),
+    z.object({
+      paymentMode: z.enum(["cash", "upi", "card"]),
+      discount: z.number().int().min(0).default(0),
+      /** With UPI, the part of the bill the customer paid in cash; the rest is UPI. */
+      cashAmount: z.number().int().min(0).default(0),
+    }),
     req.body,
   );
   const order = await loadOrder(rid, idParam(req.params.id));
@@ -333,6 +337,11 @@ ordersRouter.post("/orders/:id/settle", requireRole("owner", "manager", "cashier
     throw new HttpError(409, `${cooking.map((i) => i.name).join(", ")} still in the kitchen. Wait for it, or cancel the order.`);
   }
   const discount = Math.min(body.discount, order.subtotal);
+  const total = order.subtotal - discount;
+  // UPI can be split with cash; the other modes take the whole bill.
+  const paidCash = body.paymentMode === "upi" ? Math.min(body.cashAmount, total) : body.paymentMode === "cash" ? total : 0;
+  const paidUpi = body.paymentMode === "upi" ? total - paidCash : 0;
+  const paymentMode = paidCash > 0 && paidUpi > 0 ? "split" : paidUpi > 0 ? "upi" : body.paymentMode === "card" ? "card" : "cash";
   const now = new Date();
   await db
     .update(orderItems)
@@ -343,9 +352,11 @@ ordersRouter.post("/orders/:id/settle", requireRole("owner", "manager", "cashier
     .set({
       status: "completed",
       completedAt: now,
-      paymentMode: body.paymentMode,
+      paymentMode,
+      paidCash,
+      paidUpi,
       discount,
-      total: order.subtotal - discount,
+      total,
     })
     .where(eq(orders.id, order.id))
     .returning();
@@ -418,7 +429,7 @@ ordersRouter.patch("/kitchen/items/:id", async (req, res) => {
   res.status(204).end();
 });
 
-// ---- Packing: takeaway and delivery orders, once every cook is done ----
+// ---- Packing: takeaway orders, once every cook is done ----
 
 const packingRoles = requireRole("owner", "manager", "cashier", "packer");
 
@@ -477,11 +488,21 @@ ordersRouter.get("/reports/summary", requireRole("owner", "manager"), async (req
     .from(orders)
     .where(range)
     .groupBy(orders.type);
-  const byPayment = await db
-    .select({ mode: orders.paymentMode, revenue: sql<number>`sum(${orders.total})::int` })
+  const [paid] = await db
+    .select({
+      cash: sql<number>`coalesce(sum(${orders.paidCash}), 0)::int`,
+      upi: sql<number>`coalesce(sum(${orders.paidUpi}), 0)::int`,
+      card: sql<number>`coalesce(sum(${orders.total}) filter (where ${orders.paymentMode} = 'card'), 0)::int`,
+      unpaid: sql<number>`coalesce(sum(${orders.total}) filter (where ${orders.paymentMode} is null), 0)::int`,
+    })
     .from(orders)
-    .where(range)
-    .groupBy(orders.paymentMode);
+    .where(range);
+  const byPayment = [
+    { mode: "cash", revenue: paid?.cash ?? 0 },
+    { mode: "upi", revenue: paid?.upi ?? 0 },
+    { mode: "card", revenue: paid?.card ?? 0 },
+    { mode: null, revenue: paid?.unpaid ?? 0 },
+  ].filter((p) => p.revenue > 0);
   const topItems = await db
     .select({
       name: orderItems.name,

@@ -1,0 +1,79 @@
+# Production stack. Start it with:  docker compose -f docker-compose.prod.yml up -d --build
+# Secrets are read from .env next to this file; deploy/deploy.sh creates it on a new server.
+
+name: rms-prod
+
+x-app: &app
+  image: rms-app
+  build: { context: ., target: app }
+  restart: unless-stopped
+  environment: &app-env
+    NODE_ENV: production
+    DATABASE_URL: postgres://rms:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/rms
+    JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+    TZ: ${TZ:-Asia/Kolkata}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rms
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: rms
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rms -d rms"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # No ports: the database is only reachable from the other containers.
+
+  # Runs on every start: applies new migrations, and creates the platform admin on the first run.
+  migrate:
+    <<: *app
+    restart: "no"
+    command: sh -c "pnpm --filter @workspace/db db:migrate && pnpm --filter @workspace/db db:seed"
+    environment:
+      <<: *app-env
+      SEED_DEMO: "false"
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-admin@rms.local}
+      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:?Set SUPERADMIN_PASSWORD in .env}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  backend:
+    <<: *app
+    command: pnpm --filter backend start
+    environment: { <<: *app-env, PORT: "3001" }
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  ws:
+    <<: *app
+    command: pnpm --filter ws-app start
+    environment: { <<: *app-env, PORT: "3002" }
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    build: { context: ., target: web }
+    image: rms-web
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTP_ALT_PORT:-8080}:8080"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      ADMIN_ADDR: ${ADMIN_ADDR:-:80}
+      WORKER_ADDR: ${WORKER_ADDR:-:8080}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [backend, ws]
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

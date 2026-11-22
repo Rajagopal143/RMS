@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
-import { Minus, Plus, Search, StickyNote, X } from "lucide-react";
+import { Minus, Plus, Printer, ReceiptText, Search, StickyNote, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
@@ -25,6 +25,13 @@ import { printOrder } from "../lib/print";
 import { toPaise, useApi } from "../lib/hooks";
 import { EmptyState, ColorDot } from "../components/bits";
 
+const ITEM_STATUS: Record<string, string> = {
+  pending: "waiting",
+  cooking: "cooking",
+  done: "ready",
+  served: "served",
+};
+
 interface CartLine {
   menuItemId: number;
   qty: number;
@@ -42,9 +49,9 @@ export function PosPage() {
   const [tableId, setTableId] = useState<number | null>(Number(params.get("table")) || null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [customerAddress, setCustomerAddress] = useState("");
   const [discount, setDiscount] = useState("");
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("cash");
+  const [cashPart, setCashPart] = useState("");
   const [printKot, setPrintKot] = useState(true);
   const [printBill, setPrintBill] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -62,10 +69,17 @@ export function PosPage() {
 
   const lines = cart.map((l) => ({ ...l, item: byId.get(l.menuItemId)! })).filter((l) => l.item);
   const subtotal = lines.reduce((s, l) => s + l.item.price * l.qty, 0);
-  const discountPaise = Math.min(toPaise(discount), subtotal);
   const dineIn = type === "dine_in";
-  const total = subtotal - (dineIn ? 0 : discountPaise);
   const openOrder = tables.data?.find((t) => t.id === tableId)?.order ?? null;
+  // A table's discount comes off everything on the table; a takeaway's off what's in the cart.
+  const discountPaise = Math.min(toPaise(discount), subtotal + (dineIn && openOrder ? openOrder.subtotal : 0));
+  const total = subtotal - (dineIn ? 0 : discountPaise);
+  const onTable = dineIn && !!openOrder;
+  const tableTotal = openOrder ? Math.max(openOrder.total + total - discountPaise, 0) : 0;
+  const tablePayable = openOrder ? Math.max(openOrder.total - discountPaise, 0) : 0;
+  const splitCash = Math.min(toPaise(cashPart), tablePayable);
+  const splitUpi = tablePayable - splitCash;
+  const stillCooking = openOrder?.items.filter((i) => i.status === "pending" || i.status === "cooking") ?? [];
 
   function add(item: MenuItem) {
     if (!item.isAvailable) return;
@@ -75,6 +89,24 @@ export function PosPage() {
       return [...c, { menuItemId: item.id, qty: 1, notes: "" }];
     });
   }
+
+  function removeOne(item: MenuItem) {
+    setCart((c) => {
+      let at = -1;
+      for (let i = c.length - 1; i >= 0; i--) {
+        if (c[i]!.menuItemId !== item.id) continue;
+        if (!c[i]!.notes) {
+          at = i;
+          break;
+        }
+        if (at === -1) at = i;
+      }
+      if (at === -1) return c;
+      return c.map((l, i) => (i === at ? { ...l, qty: l.qty - 1 } : l)).filter((l) => l.qty > 0);
+    });
+  }
+
+  const qtyInOrder = (id: number) => cart.reduce((n, l) => (l.menuItemId === id ? n + l.qty : n), 0);
 
   function change(index: number, patch: Partial<CartLine>) {
     setCart((c) => c.map((l, i) => (i === index ? { ...l, ...patch } : l)).filter((l) => l.qty > 0));
@@ -86,9 +118,50 @@ export function PosPage() {
     if (params.has("table")) setParams({}, { replace: true });
     setCustomerName("");
     setCustomerPhone("");
-    setCustomerAddress("");
     setDiscount("");
     setNoteFor(null);
+  }
+
+  /** Prints the bill for what's on the table now, without settling it. */
+  async function printTableBill(order: Order) {
+    const results = await printOrder(order, setup!, { kot: false, bill: true });
+    if (results.length === 0) toast.info("Add a bill printer in Printers first");
+    for (const r of results) {
+      if (r.ok) toast.success(`Printed bill for table ${order.tableNo}`);
+      else toast.error(`${r.label}: ${r.error}`);
+    }
+  }
+
+  /** Takes payment for the picked table, prints its bill and frees the table. */
+  async function settleTable(order: Order) {
+    setBusy(true);
+    try {
+      const closed = await api<Order>(`/orders/${order.id}/settle`, {
+        method: "POST",
+        body: { paymentMode, discount: discountPaise, cashAmount: paymentMode === "upi" ? splitCash : 0 },
+      });
+      const how = closed.paymentMode === "split" ? `${formatMoney(closed.paidCash)} cash + ${formatMoney(closed.paidUpi)} UPI` : paymentMode.toUpperCase();
+      toast.success(`Table ${order.tableNo} settled · ${formatMoney(closed.total)} by ${how}`);
+      if (printBill) await printTableBill(closed);
+      setDiscount("");
+      setCashPart("");
+      setTableId(null);
+      void tables.reload();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Sends the table's kitchen tickets again, for a lost or jammed KOT. */
+  async function reprintKot(order: Order) {
+    const results = await printOrder(order, setup!, { kot: true, bill: false });
+    if (results.length === 0) toast.info("No kitchen printer covers these foods");
+    for (const r of results) {
+      if (r.ok) toast.success(`Printed ${r.label}`);
+      else toast.error(`${r.label}: ${r.error}`);
+    }
   }
 
   async function placeOrder() {
@@ -101,7 +174,6 @@ export function PosPage() {
           tableId: dineIn ? tableId : null,
           customerName: customerName || null,
           customerPhone: customerPhone || null,
-          customerAddress: type === "delivery" ? customerAddress : null,
           discount: discountPaise,
           paymentMode,
           items: cart.map((l) => ({ menuItemId: l.menuItemId, qty: l.qty, notes: l.notes || null })),
@@ -142,8 +214,6 @@ export function PosPage() {
       ? "Add items to start an order"
       : dineIn && !tableId
         ? "Pick a table"
-        : type === "delivery" && !customerAddress
-          ? "Enter the delivery address"
           : null;
 
   return (
@@ -172,29 +242,56 @@ export function PosPage() {
           ))}
         </div>
         <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3 pb-6 sm:grid-cols-[repeat(auto-fill,minmax(170px,1fr))] lg:overflow-y-auto lg:pr-1">
-          {visible.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => add(m)}
-              disabled={!m.isAvailable}
-              className="group relative flex min-h-24 flex-col justify-between rounded-lg border bg-card p-3 text-left transition hover:-translate-y-0.5 hover:border-ink/40 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0"
-              style={{ boxShadow: `inset 0 3px 0 ${categoryColor(m.categoryId)}` }}
-            >
-              <span className="flex items-start gap-1.5 text-sm font-medium leading-snug">
-                <span
-                  className={cn("mt-1 size-2.5 shrink-0 rounded-[2px] border", m.isVeg ? "border-basil" : "border-chili")}
-                  title={m.isVeg ? "Veg" : "Non-veg"}
-                >
-                  <span className={cn("m-[2px] block size-1 rounded-full", m.isVeg ? "bg-basil" : "bg-chili")} />
+          {visible.map((m) => {
+            const qty = qtyInOrder(m.id);
+            return (
+              <div
+                key={m.id}
+                className={cn(
+                  "relative flex min-h-28 flex-col justify-between rounded-lg border bg-card p-3 text-left transition",
+                  qty > 0 && "border-ink shadow-md",
+                  !m.isAvailable && "opacity-45",
+                )}
+                style={{ boxShadow: `inset 0 3px 0 ${categoryColor(m.categoryId)}` }}
+              >
+                <span className="flex items-start gap-1.5 text-sm font-medium leading-snug">
+                  <span
+                    className={cn("mt-1 size-2.5 shrink-0 rounded-[2px] border", m.isVeg ? "border-basil" : "border-chili")}
+                    title={m.isVeg ? "Veg" : "Non-veg"}
+                  >
+                    <span className={cn("m-[2px] block size-1 rounded-full", m.isVeg ? "bg-basil" : "bg-chili")} />
+                  </span>
+                  {m.name}
                 </span>
-                {m.name}
-              </span>
-              <span className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                <span className="tabular text-sm text-foreground">{formatMoney(m.price)}</span>
-                {!m.isAvailable && "Sold out"}
-              </span>
-            </button>
-          ))}
+                <span className="mt-2 flex items-center justify-between gap-2">
+                  <span className="tabular text-sm">{formatMoney(m.price)}</span>
+                  {!m.isAvailable ? (
+                    <span className="text-xs text-muted-foreground">Sold out</span>
+                  ) : qty === 0 ? (
+                    <button
+                      onClick={() => add(m)}
+                      className="inline-flex items-center gap-1 rounded-md border border-ink px-3 py-1.5 font-sans text-sm font-semibold hover:bg-ink hover:text-white"
+                      aria-label={`Add ${m.name}`}
+                    >
+                      <Plus className="size-3.5" /> Add
+                    </button>
+                  ) : (
+                    <span className="inline-flex items-center overflow-hidden rounded-md bg-ink font-sans text-white">
+                      <button onClick={() => removeOne(m)} className="p-2 hover:bg-white/15" aria-label={`Remove one ${m.name}`}>
+                        <Minus className="size-4" />
+                      </button>
+                      <span className="tabular min-w-6 text-center text-sm font-semibold" aria-live="polite">
+                        {qty}
+                      </span>
+                      <button onClick={() => add(m)} className="p-2 hover:bg-white/15" aria-label={`Add one more ${m.name}`}>
+                        <Plus className="size-4" />
+                      </button>
+                    </span>
+                  )}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -202,7 +299,7 @@ export function PosPage() {
       {cart.length > 0 && (
         <button
           onClick={() => document.getElementById("order-ticket")?.scrollIntoView({ behavior: "smooth" })}
-          className="fixed bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white shadow-lg lg:hidden"
+          className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-20 -translate-x-1/2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white shadow-lg lg:hidden"
         >
           View order · {cart.reduce((n, l) => n + l.qty, 0)} items · {formatMoney(total)}
         </button>
@@ -211,7 +308,7 @@ export function PosPage() {
       {/* Order ticket */}
       <aside id="order-ticket" className="flex min-h-0 flex-col border-t bg-steel/60 p-4 sm:p-5 lg:border-l lg:border-t-0">
         <div className="ticket flex min-h-[420px] flex-1 flex-col px-5 pt-4 lg:min-h-0" style={{ ["--ticket-accent" as string]: "var(--color-ink)" }}>
-          <div className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1 font-sans">
+          <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1 font-sans">
             {ORDER_TYPES.map((t) => (
               <button
                 key={t}
@@ -244,20 +341,33 @@ export function PosPage() {
             {type !== "dine_in" && (
               <Input placeholder="Phone" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} aria-label="Phone" />
             )}
-            {type === "delivery" && (
-              <Input
-                className="col-span-2"
-                placeholder="Delivery address"
-                value={customerAddress}
-                onChange={(e) => setCustomerAddress(e.target.value)}
-                aria-label="Delivery address"
-              />
-            )}
           </div>
 
           <hr className="ticket-rule my-3" />
 
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+            {dineIn && openOrder && (
+              <div className="mb-3">
+                <p className="mb-1 flex items-baseline justify-between text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  <span>Already on table {openOrder.tableNo} · #{openOrder.orderNo}</span>
+                  <span>{formatMoney(openOrder.total)}</span>
+                </p>
+                <ul className="space-y-0.5">
+                  {openOrder.items.map((i) => (
+                    <li key={i.id} className="flex items-center gap-2 text-muted-foreground">
+                      <ColorDot color={categoryColor(i.categoryId)} />
+                      <span className="min-w-0 flex-1 truncate">
+                        {i.qty} × {i.name}
+                      </span>
+                      <span className="font-sans text-[11px] uppercase">{ITEM_STATUS[i.status]}</span>
+                      <span className="w-20 text-right">{formatMoney(i.price * i.qty)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <hr className="ticket-rule mt-3" />
+                <p className="mt-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Adding now</p>
+              </div>
+            )}
             {lines.length === 0 && <p className="py-10 text-center text-muted-foreground">Tap dishes to add them</p>}
             {lines.map((l, i) => (
               <div key={i}>
@@ -302,30 +412,26 @@ export function PosPage() {
 
           <hr className="ticket-rule my-3" />
           <div className="space-y-1 text-sm">
-            <Row label="Subtotal" value={formatMoney(subtotal)} />
-            {!dineIn && (
-            <div className="flex items-center justify-between">
-              <span>Discount ₹</span>
-              <Input
-                className="h-7 w-24 text-right font-mono"
-                inputMode="decimal"
-                value={discount}
-                onChange={(e) => setDiscount(e.target.value.replace(/[^\d.]/g, ""))}
-                aria-label="Discount in rupees"
-              />
-            </div>
+            {!onTable && <Row label="Subtotal" value={formatMoney(subtotal)} />}
+            {(!dineIn || onTable) && (
+              <div className="flex items-center justify-between">
+                <span>Discount ₹</span>
+                <Input
+                  className="h-7 w-24 text-right font-mono"
+                  inputMode="decimal"
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value.replace(/[^\d.]/g, ""))}
+                  aria-label="Discount in rupees"
+                />
+              </div>
             )}
+            {/* A table shows one running total: what's on it plus whatever is being added. */}
             <div className="flex justify-between pt-1 text-lg font-bold">
-              <span>{dineIn && openOrder ? "Adding" : "Total"}</span>
-              <span>{formatMoney(total)}</span>
+              <span>{onTable ? "Table total" : "Total"}</span>
+              <span>{formatMoney(onTable ? tableTotal : total)}</span>
             </div>
-            {dineIn && openOrder && (
-              <p className="text-xs text-muted-foreground">
-                Table {openOrder.tableNo} already has {formatMoney(openOrder.total)} open. The bill is settled from Tables.
-              </p>
-            )}
           </div>
-          {!dineIn && (
+          {(!dineIn || openOrder) && (
           <div className="mt-3 grid grid-cols-3 gap-1 font-sans">
             {PAYMENT_MODES.map((m) => (
               <button
@@ -338,6 +444,24 @@ export function PosPage() {
             ))}
           </div>
           )}
+          {onTable && paymentMode === "upi" && (
+            <div className="mt-2 space-y-1 font-sans text-sm">
+              <div className="flex items-center justify-between">
+                <span>Cash part ₹</span>
+                <Input
+                  className="h-7 w-24 text-right font-mono"
+                  inputMode="decimal"
+                  placeholder="0"
+                  value={cashPart}
+                  onChange={(e) => setCashPart(e.target.value.replace(/[^\d.]/g, ""))}
+                  aria-label="Amount paid in cash"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Cash {formatMoney(splitCash)} · UPI {formatMoney(splitUpi)}
+              </p>
+            </div>
+          )}
           <div className="mb-2 mt-3 flex gap-5 font-sans text-sm">
             <Label className="flex items-center gap-2 font-normal">
               <Checkbox checked={printKot} onCheckedChange={(v) => setPrintKot(v === true)} /> Print KOT
@@ -349,9 +473,42 @@ export function PosPage() {
             )}
           </div>
         </div>
-        <Button size="lg" className="mt-4 h-12 text-base" disabled={busy || !!missing} onClick={placeOrder}>
-          {busy ? "Sending…" : (missing ?? (dineIn ? `Send to kitchen · ${formatMoney(total)}` : `Place order · ${formatMoney(total)}`))}
-        </Button>
+        {dineIn && openOrder && (
+          <div className="mt-3 space-y-2 font-sans">
+            {stillCooking.length > 0 && (
+              <p className="rounded bg-turmeric-soft px-2 py-1.5 text-xs">
+                {stillCooking.map((i) => i.name).join(", ")} still in the kitchen. You can settle once it's ready.
+              </p>
+            )}
+            {cart.length > 0 && (
+              <p className="rounded bg-turmeric-soft px-2 py-1.5 text-xs">
+                Send the items you just added to the kitchen before settling, or they won't be on the bill.
+              </p>
+            )}
+            <Button
+              size="lg"
+              className="h-12 w-full text-base"
+              disabled={busy || stillCooking.length > 0 || cart.length > 0}
+              onClick={() => settleTable(openOrder)}
+            >
+              <ReceiptText /> Settle {openOrder.tableNo} · {formatMoney(tablePayable)}
+            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" onClick={() => printTableBill(openOrder)}>
+                <Printer /> Print bill
+              </Button>
+              <Button variant="outline" onClick={() => reprintKot(openOrder)}>
+                <Printer /> Reprint KOT
+              </Button>
+            </div>
+          </div>
+        )}
+        {/* With a table picked, the send button only appears once there's something to send. */}
+        {(cart.length > 0 || !(dineIn && tableId)) && (
+          <Button size="lg" className="mt-4 h-12 text-base" disabled={busy || !!missing} onClick={placeOrder}>
+            {busy ? "Sending…" : (missing ?? (dineIn ? `Send to kitchen · ${formatMoney(total)}` : `Place order · ${formatMoney(total)}`))}
+          </Button>
+        )}
       </aside>
     </div>
   );

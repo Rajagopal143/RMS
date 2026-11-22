@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, asc, desc, eq, gte, lt, lte, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, lt, lte, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, expenses, expenseTags, orders, users } from "@workspace/db";
 import { requireRole, restaurantId } from "../lib/auth.js";
@@ -74,19 +74,41 @@ async function assertTag(rid: number, tagId: number | null | undefined) {
 
 const rangeQuery = z.object({ from: isoDate, to: isoDate, tagId: z.coerce.number().int().optional() });
 
+const pageQuery = rangeQuery.extend({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(15),
+});
+
+/** One page of expenses, newest first, plus the total so the screen can show page numbers. */
 expensesRouter.get("/expenses", recorders, async (req, res) => {
   const rid = restaurantId(req);
-  const q = parse(rangeQuery, req.query);
+  const q = parse(pageQuery, req.query);
   const conds = [eq(expenses.restaurantId, rid), gte(expenses.spentOn, q.from), lte(expenses.spentOn, q.to)];
   if (q.tagId) conds.push(eq(expenses.tagId, q.tagId));
+
+  const [{ total } = { total: 0 }] = await db
+    .select({ total: count() })
+    .from(expenses)
+    .where(and(...conds));
+  // If rows were deleted so the asked-for page no longer exists, serve the last one.
+  const pages = Math.max(1, Math.ceil(total / q.pageSize));
+  const page = Math.min(q.page, pages);
+
   const rows = await db
     .select({ expense: expenses, addedBy: users.name })
     .from(expenses)
     .leftJoin(users, eq(users.id, expenses.createdBy))
     .where(and(...conds))
     .orderBy(desc(expenses.spentOn), desc(expenses.id))
-    .limit(500);
-  res.json(rows.map((r) => ({ ...r.expense, addedBy: r.addedBy })));
+    .limit(q.pageSize)
+    .offset((page - 1) * q.pageSize);
+  res.json({
+    items: rows.map((r) => ({ ...r.expense, addedBy: r.addedBy })),
+    total,
+    page,
+    pageSize: q.pageSize,
+    pages,
+  });
 });
 
 expensesRouter.post("/expenses", recorders, async (req, res) => {

@@ -15,7 +15,7 @@ export const roleEnum = pgEnum("role", ["super_admin", "owner", "manager", "cash
 export const subscriptionStatusEnum = pgEnum("subscription_status", ["active", "expired", "cancelled"]);
 export const orderTypeEnum = pgEnum("order_type", ["dine_in", "takeaway", "delivery"]);
 /**
- * placed/cooking: in the kitchen · packing: takeaway/delivery ready to pack ·
+ * placed/cooking: in the kitchen · packing: takeaway ready to pack ·
  * serving: dine-in food ready for the waiter · served: everything at the table, awaiting the bill.
  */
 export const orderStatusEnum = pgEnum("order_status", ["placed", "cooking", "packing", "serving", "served", "completed", "cancelled"]);
@@ -170,7 +170,10 @@ export const orders = pgTable(
     tax: integer("tax").notNull().default(0),
     discount: integer("discount").notNull().default(0),
     total: integer("total").notNull(),
+    /** cash · upi · card · split (part cash, part UPI) */
     paymentMode: text("payment_mode"),
+    paidCash: integer("paid_cash").notNull().default(0),
+    paidUpi: integer("paid_upi").notNull().default(0),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     cookedAt: timestamp("cooked_at", { withTimezone: true }),

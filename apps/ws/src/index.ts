@@ -5,6 +5,9 @@ import postgres from "postgres";
 import { WebSocketServer, type WebSocket } from "ws";
 
 const port = Number(process.env.PORT) || 3002;
+if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET is not set. Set a long random value before running in production.");
+}
 const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-me";
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is not set");
