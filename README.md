@@ -103,21 +103,23 @@ password. Set `SEED_DEMO=false` to start with an empty restaurant list.
 
 ## Deploying to a server
 
-Works on any Ubuntu server (AWS Lightsail, EC2, any VPS) with a public IP. It runs the same
-code in Docker with real secrets, the apps built for production, and Caddy in front.
+Works on any Ubuntu server (AWS EC2, Lightsail, any VPS) with a public IP, with no Docker. It
+installs **PostgreSQL** directly, builds the two web apps and serves the built folders with
+**nginx**, and runs the API and live-updates service under **PM2** (restarted if they crash, and
+started again after a reboot). Code is pulled from the `production` branch.
 
 **1. Make the server.** Ubuntu 22.04 or 24.04, at least 2 GB of memory (1 GB can run out while
-installing). In the provider's firewall, open **22** (SSH), **80**, **8080** and **443**.
+building). In the provider's firewall, open **22** (SSH), **80**, **8080** and **443**.
 
 **2. Deploy.** SSH in and run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Rajagopal143/RMS/main/deploy/deploy.sh -o deploy.sh
+curl -fsSL https://raw.githubusercontent.com/Rajagopal143/RMS/production/deploy/deploy.sh -o deploy.sh
 bash deploy.sh --admin-email you@example.com
 ```
 
-It installs Docker, gets the code, creates secrets, builds and starts everything (the first
-build takes several minutes) and schedules a nightly database backup. At the end it prints the
+It installs the packages, gets the code, creates the database and secrets, builds and starts
+everything (the first build takes several minutes) and schedules a nightly database backup. At the end it prints the
 two addresses and, once, the platform admin login. Until you have a domain the apps are on plain
 `http` at the server's IP: `http://IP` for admin and billing, `http://IP:8080` for waiters,
 kitchen and packing. That is fine for trying it out, but passwords travel unencrypted.
@@ -129,17 +131,20 @@ server's IP: `example.com` and `worker.example.com` (use your own name). Then:
 bash /opt/rms/deploy/deploy.sh --domain example.com
 ```
 
-It checks both names point at the server, then Caddy gets certificates by itself. Waiters
-use `https://worker.example.com`. HTTPS is also what lets phones fully install the apps and show
+It checks both names point at the server, then gets a free Let's Encrypt certificate (renewed
+automatically) and switches nginx to HTTPS, with port 80 redirecting. Waiters use
+`https://worker.example.com`. HTTPS is also what lets phones fully install the apps and show
 pop-up notifications. Close port 8080 afterwards.
 
 **Updating** is the same command again: `bash /opt/rms/deploy/deploy.sh` pulls the latest code,
-applies any database migrations and restarts what changed.
+rebuilds the apps, applies any database migrations and reloads the services.
 
 Good to know:
 
-- Secrets live in `/opt/rms/.env` on the server (owner-only). The database is not reachable
-  from outside; only SSH and the web ports are.
+- Secrets live in `/opt/rms/.env` on the server (owner-only). PostgreSQL only listens on the
+  server itself; only SSH and the web ports are open to the outside.
+- Check the services with `pm2 status` and `pm2 logs rms-api`; nginx errors are in
+  `/var/log/nginx/error.log`.
 - Backups go to `/opt/rms/backups` every night and the last two weeks are kept. Also turn on your
   provider's server snapshots, so a lost server doesn't mean lost data. `deploy/backup.sh` explains
   how to restore.
