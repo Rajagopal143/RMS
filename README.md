@@ -124,8 +124,9 @@ two addresses and, once, the platform admin login. Until you have a domain the a
 `http` at the server's IP: `http://IP` for admin and billing, `http://IP:8080` for waiters,
 kitchen and packing. That is fine for trying it out, but passwords travel unencrypted.
 
-**3. Add HTTPS when your domain is ready.** At your domain provider, add two **A records** to the
-server's IP: `example.com` and `worker.example.com` (use your own name). Then:
+**3. Add HTTPS when your domain is ready.** At your domain provider, add three **A records** to the
+server's IP: `example.com` (admin and billing), `worker.example.com` (waiters, kitchen, packing)
+and `api.example.com` (the API and live updates). Use your own name. Then:
 
 ```bash
 bash /opt/rms/deploy/deploy.sh --domain example.com

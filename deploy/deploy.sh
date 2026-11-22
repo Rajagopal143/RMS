@@ -37,8 +37,8 @@ done
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 ENV_FILE="$APP_DIR/.env"
-ADMIN_NAME=""; WORKER_NAME=""
-[ -n "$DOMAIN" ] && { ADMIN_NAME="$DOMAIN"; WORKER_NAME="worker.$DOMAIN"; }
+ADMIN_NAME=""; WORKER_NAME=""; API_NAME=""
+[ -n "$DOMAIN" ] && { ADMIN_NAME="$DOMAIN"; WORKER_NAME="worker.$DOMAIN"; API_NAME="api.$DOMAIN"; }
 
 sudo -n true 2>/dev/null || { echo "This needs a user with sudo (the default 'ubuntu' user has it)."; exit 1; }
 export DEBIAN_FRONTEND=noninteractive
@@ -105,6 +105,8 @@ fi
 say "Building the apps (the first build takes a few minutes)"
 export ELECTRON_SKIP_BINARY_DOWNLOAD=1 CI=true
 pnpm install --frozen-lockfile
+# With a domain, the apps talk to the API at its own address (api.<domain>).
+if [ -n "$API_NAME" ]; then export VITE_API_ORIGIN="https://$API_NAME"; else unset VITE_API_ORIGIN; fi
 pnpm --filter admin build
 pnpm --filter worker build
 sudo mkdir -p "$WEB_DIR/admin" "$WEB_DIR/worker" /var/www/certbot
@@ -167,6 +169,27 @@ location = /manifest.webmanifest { add_header Cache-Control "no-cache"; }
 
 location / { try_files $uri /index.html; }
 NGINX
+  # The API's own address (api.<domain>): everything goes to the services, nothing static.
+  sudo tee /etc/nginx/snippets/rms-api.conf >/dev/null <<'NGINX'
+location /.well-known/acme-challenge/ { root /var/www/certbot; }
+
+location /ws {
+    proxy_pass http://127.0.0.1:3002;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_read_timeout 3600s;
+}
+
+location / {
+    proxy_pass http://127.0.0.1:3001;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+NGINX
 }
 
 write_http_site() { # plain http: admin on 80, worker on 8080 (or both names on 80 when a domain is set)
@@ -185,6 +208,12 @@ server {
     server_name $WORKER_NAME;
     root $WEB_DIR/worker;
     include snippets/rms-site.conf;
+}
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $API_NAME;
+    include snippets/rms-api.conf;
 }
 NGINX
   else
@@ -239,6 +268,16 @@ server {
     root $WEB_DIR/worker;
     include snippets/rms-site.conf;
 }
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name $API_NAME;
+    ssl_certificate $cert/fullchain.pem;
+    ssl_certificate_key $cert/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    include snippets/rms-api.conf;
+}
 NGINX
 }
 
@@ -251,9 +290,9 @@ sudo ln -sf /etc/nginx/sites-available/rms /etc/nginx/sites-enabled/rms
 IP="$(curl -fsS --max-time 8 https://checkip.amazonaws.com 2>/dev/null | tr -d '[:space:]' || true)"
 
 if [ -n "$DOMAIN" ]; then
-  say "Checking that $ADMIN_NAME and $WORKER_NAME point at this server ($IP)"
+  say "Checking that $ADMIN_NAME, $WORKER_NAME and $API_NAME point at this server ($IP)"
   missing=0
-  for name in "$ADMIN_NAME" "$WORKER_NAME"; do
+  for name in "$ADMIN_NAME" "$WORKER_NAME" "$API_NAME"; do
     got="$(getent ahostsv4 "$name" 2>/dev/null | awk 'NR==1{print $1}')"
     if [ "$got" = "$IP" ]; then echo "  ok      $name -> $got"; else echo "  MISSING $name -> ${got:-nothing yet} (needs an A record for $IP)"; missing=1; fi
   done
@@ -267,8 +306,8 @@ if [ -n "$DOMAIN" ]; then
   say "Getting the https certificate"
   contact=(--register-unsafely-without-email)
   [ -n "$CERT_EMAIL" ] && contact=(-m "$CERT_EMAIL")
-  sudo certbot certonly --webroot -w /var/www/certbot -d "$ADMIN_NAME" -d "$WORKER_NAME" \
-    --non-interactive --agree-tos "${contact[@]}" --keep-until-expiring
+  sudo certbot certonly --webroot -w /var/www/certbot -d "$ADMIN_NAME" -d "$WORKER_NAME" -d "$API_NAME" \
+    --non-interactive --agree-tos "${contact[@]}" --keep-until-expiring --expand
   sudo mkdir -p /etc/letsencrypt/renewal-hooks/deploy
   printf '#!/bin/sh\nsystemctl reload nginx\n' | sudo tee /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh >/dev/null
   sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
@@ -287,6 +326,7 @@ say "Done"
 if [ -n "$DOMAIN" ]; then
   echo "  Admin and billing:         https://$ADMIN_NAME"
   echo "  Waiters, kitchen, packing: https://$WORKER_NAME"
+  echo "  API:                       https://$API_NAME"
 else
   echo "  Admin and billing:         http://$IP"
   echo "  Waiters, kitchen, packing: http://$IP:8080"
